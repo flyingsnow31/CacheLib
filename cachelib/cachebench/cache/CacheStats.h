@@ -29,8 +29,11 @@ struct Stats {
   uint64_t numEvictions{0};
   uint64_t numItems{0};
 
+  uint64_t evictAttempts{0};
   uint64_t allocAttempts{0};
   uint64_t allocFailures{0};
+
+  std::vector<double> poolUsageFraction;
 
   uint64_t numCacheGets{0};
   uint64_t numCacheGetMiss{0};
@@ -83,6 +86,7 @@ struct Stats {
 
   uint64_t slabsReleased{0};
   uint64_t numAbortedSlabReleases{0};
+  uint64_t numSkippedSlabReleases{0};
   uint64_t moveAttemptsForSlabRelease{0};
   uint64_t moveSuccessesForSlabRelease{0};
   uint64_t evictionAttemptsForSlabRelease{0};
@@ -113,7 +117,18 @@ struct Stats {
                           allocAttempts,
                           invertPctFn(allocFailures, allocAttempts))
         << std::endl;
+    out << folly::sformat(
+               "Evict Attempts: {:,} Success: {:.2f}%",
+               evictAttempts,
+               invertPctFn(evictAttempts - numEvictions, evictAttempts))
+        << std::endl;
     out << folly::sformat("RAM Evictions : {:,}", numEvictions) << std::endl;
+
+    for (auto pid = 0U; pid < poolUsageFraction.size(); pid++) {
+      out << folly::sformat("Fraction of pool {:,} used : {:.2f}", pid,
+                            poolUsageFraction[pid])
+          << std::endl;
+    }
 
     if (numCacheGets > 0) {
       out << folly::sformat("Cache Gets    : {:,}", numCacheGets) << std::endl;
@@ -282,6 +297,18 @@ struct Stats {
 
   uint64_t getTotalMisses() const {
     return numNvmGets > 0 ? numNvmGetMiss : numCacheGetMiss;
+  }
+
+  double getOverallHitRatio(const Stats& prevStats) const {
+    auto totalMisses = getTotalMisses();
+    auto prevTotalMisses = prevStats.getTotalMisses();
+    if (numCacheGets <= prevStats.numCacheGets ||
+        totalMisses <= prevTotalMisses) {
+      return 0.0;
+    }
+
+    return invertPctFn(totalMisses - prevTotalMisses,
+                       numCacheGets - prevStats.numCacheGets);
   }
 
   // Render the stats based on the delta between overall stats and previous

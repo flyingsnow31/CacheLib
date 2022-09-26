@@ -21,6 +21,7 @@
 #include "cachelib/common/ApproxSplitSet.h"
 #include "cachelib/common/AtomicCounter.h"
 #include "cachelib/common/PercentileStats.h"
+#include "cachelib/common/Time.h"
 
 namespace facebook {
 namespace cachelib {
@@ -116,7 +117,6 @@ class NvmAdmissionPolicy {
 
   uint64_t getMinTTL() const { return minTTL_; }
 
- protected:
   // Implement this method for the detailed admission decision logic.
   // By default this accepts all items.
   virtual bool acceptImpl(const Item&, folly::Range<ChainedItemIter>) {

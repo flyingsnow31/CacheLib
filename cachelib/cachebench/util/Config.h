@@ -72,6 +72,7 @@ struct DistributionConfig : public JSONConfig {
   double loneGetRatio{0.0};
   double loneSetRatio{0.0};
   double updateRatio{0.0};
+  double couldExistRatio{0.0};
 
   bool usesChainedItems() const { return addChainedRatio > 0; }
 
@@ -173,11 +174,17 @@ struct StressorConfig : public JSONConfig {
   // name identifying a custom type of the stress test. When empty, launches a
   // standard stress test using the workload config against an instance of the
   // cache defined by the CacheConfig. Other supported options are
-  // "high_refcount", "cachelib_map", cachelib_range_map", "fast_shutdown"
+  // "high_refcount", "cachelib_map", cachelib_range_map", "fast_shutdown",
+  // "async"
   std::string name;
 
   // follow get misses with a set
   bool enableLookaside{false};
+
+  // only set a key in the cache if the key already doesn't exist
+  // this is useful for replaying traces with both get and set, and also
+  // for manually configured synthetic workloads.
+  bool onlySetIfMiss{false};
 
   // if enabled, initializes an item with random bytes. For consistency mode,
   // this option is ignored since the consistency check fills in a sequence
@@ -193,6 +200,10 @@ struct StressorConfig : public JSONConfig {
   // If enabled, stressor will check whether nvm cache has been warmed up and
   // output stats after warmup.
   bool checkNvmCacheWarmUp{false};
+
+  // If enabled, each value will be read on find. This is useful for measuring
+  // performance of value access.
+  bool touchValue{false};
 
   uint64_t numOps{0};     // operation per thread
   uint64_t numThreads{0}; // number of threads that will run

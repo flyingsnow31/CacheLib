@@ -17,9 +17,11 @@
 #include "cachelib/cachebench/runner/Stressor.h"
 
 #include "cachelib/allocator/CacheAllocator.h"
+#include "cachelib/cachebench/runner/AsyncCacheStressor.h"
 #include "cachelib/cachebench/runner/CacheStressor.h"
 #include "cachelib/cachebench/runner/FastShutdown.h"
 #include "cachelib/cachebench/runner/IntegrationStressor.h"
+#include "cachelib/cachebench/workload/AmplifiedReplayGenerator.h"
 #include "cachelib/cachebench/workload/OnlineGenerator.h"
 #include "cachelib/cachebench/workload/PieceWiseReplayGenerator.h"
 #include "cachelib/cachebench/workload/ReplayGenerator.h"
@@ -40,6 +42,8 @@ ThroughputStats& ThroughputStats::operator+=(const ThroughputStats& other) {
   delNotFound += other.delNotFound;
   addChained += other.addChained;
   addChainedFailure += other.addChainedFailure;
+  couldExistOp += other.couldExistOp;
+  couldExistOpFalse += other.couldExistOpFalse;
   ops += other.ops;
 
   return *this;
@@ -70,6 +74,13 @@ void ThroughputStats::render(uint64_t elapsedTimeNs, std::ostream& out) const {
       addChained == 0 ? 0.0
                       : 100.0 * (addChained - addChainedFailure) / addChained;
 
+  const uint64_t couldExistPerSec =
+      util::narrow_cast<uint64_t>(couldExistOp / elapsedSecs);
+  const double couldExistSuccessRate =
+      couldExistOp == 0
+          ? 0.0
+          : 100.0 * (couldExistOp - couldExistOpFalse) / couldExistOp;
+
   out << std::fixed;
   out << folly::sformat("{:10}: {:.2f} million", "Total Ops", ops / 1e6)
       << std::endl;
@@ -81,6 +92,7 @@ void ThroughputStats::render(uint64_t elapsedTimeNs, std::ostream& out) const {
         << std::endl;
   };
   outFn("get", getPerSec, "success", getSuccessRate);
+  outFn("couldExist", couldExistPerSec, "success", couldExistSuccessRate);
   outFn("set", setPerSec, "success", setSuccessRate);
   outFn("del", delPerSec, "found", delSuccessRate);
   if (update > 0) {
@@ -130,7 +142,11 @@ std::unique_ptr<GeneratorBase> makeGenerator(const StressorConfig& config) {
   if (config.generator == "piecewise-replay") {
     return std::make_unique<PieceWiseReplayGenerator>(config);
   } else if (config.generator == "replay") {
-    return std::make_unique<ReplayGenerator>(config);
+    if (config.numThreads > 1) {
+      return std::make_unique<AmplifiedReplayGenerator>(config);
+    } else {
+      return std::make_unique<ReplayGenerator>(config);
+    }
   } else if (config.generator.empty() || config.generator == "workload") {
     // TODO: Remove the empty() check once we label workload-based configs
     // properly
@@ -158,6 +174,25 @@ std::unique_ptr<Stressor> Stressor::makeStressor(
   } else if (stressorConfig.name == "fast_shutdown") {
     return std::make_unique<FastShutdownStressor>(cacheConfig,
                                                   stressorConfig.numOps);
+  } else if (stressorConfig.name == "async") {
+    if (stressorConfig.generator != "workload" &&
+        !stressorConfig.generator.empty()) {
+      // async model has not been tested with other generators
+      throw std::invalid_argument(folly::sformat(
+          "Async cache stressor only works with workload generator currently. "
+          "generator: {}",
+          stressorConfig.generator));
+    }
+
+    auto generator = makeGenerator(stressorConfig);
+    if (cacheConfig.allocator == "LRU") {
+      // default allocator is LRU, other allocator types should be added here
+      return std::make_unique<AsyncCacheStressor<LruAllocator>>(
+          cacheConfig, stressorConfig, std::move(generator));
+    } else if (cacheConfig.allocator == "LRU2Q") {
+      return std::make_unique<AsyncCacheStressor<Lru2QAllocator>>(
+          cacheConfig, stressorConfig, std::move(generator));
+    }
   } else {
     auto generator = makeGenerator(stressorConfig);
     if (cacheConfig.allocator == "LRU") {

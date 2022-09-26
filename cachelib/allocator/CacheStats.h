@@ -34,8 +34,12 @@ namespace cachelib {
 struct EvictionStatPerType {
   // the age of the oldest element in seconds
   uint64_t oldestElementAge = 0ULL;
+
   // number of elements in the eviction queue
   uint64_t size = 0ULL;
+
+  // the estimated age after removing a slab worth of elements
+  uint64_t projectedAge = 0ULL;
 };
 
 // stats class for one MM container (a.k.a one allocation class) related to
@@ -46,9 +50,6 @@ struct EvictionAgeStat {
   EvictionStatPerType hotQueueStat;
 
   EvictionStatPerType coldQueueStat;
-
-  // this is the estimated age after removing a slab worth of elements
-  uint64_t projectedAge;
 };
 
 // stats related to evictions for a pool
@@ -70,10 +71,6 @@ struct PoolEvictionAgeStats {
 
   const EvictionStatPerType& getColdEvictionStat(ClassId cid) const {
     return classEvictionAgeStats.at(cid).coldQueueStat;
-  }
-
-  uint64_t getProjectedAge(ClassId cid) const {
-    return classEvictionAgeStats.at(cid).projectedAge;
   }
 };
 
@@ -105,6 +102,9 @@ struct CacheStat {
 
   // number of attempts to allocate memory
   uint64_t allocAttempts{0};
+
+  // number of eviction attempts
+  uint64_t evictionAttempts{0};
 
   // number of failed attempts
   uint64_t allocFailures{0};
@@ -179,6 +179,9 @@ struct PoolStats {
 
   // number of attempts to allocate
   uint64_t numAllocAttempts() const;
+
+  // number of attempts to evict
+  uint64_t numEvictionAttempts() const;
 
   // number of attempts that failed
   uint64_t numAllocFailures() const;
@@ -257,6 +260,7 @@ struct SlabReleaseStats {
   uint64_t numMoveSuccesses;
   uint64_t numEvictionAttempts;
   uint64_t numEvictionSuccesses;
+  uint64_t numSlabReleaseStuck;
 };
 
 // Stats for reaper
@@ -410,6 +414,9 @@ struct GlobalCacheStats {
   // number of attempts to allocate an item
   uint64_t allocAttempts{0};
 
+  // number of eviction attempts
+  uint64_t evictionAttempts{0};
+
   // number of failures to allocate an item due to internal error
   uint64_t allocFailures{0};
 
@@ -458,11 +465,25 @@ struct GlobalCacheStats {
   util::PercentileStats::Estimates nvmEvictionSecondsToExpiry{};
   util::PercentileStats::Estimates nvmPutSize{};
 
+  // time when CacheAllocator structure is created. Whenever a process restarts
+  // and even if cache content is persisted, this will be reset. It's similar
+  // to process uptime. (But alternatively if user explicitly shuts down and
+  // re-attach cache, this will be reset as well)
+  uint64_t cacheInstanceUpTime{0};
+
   // time since the ram cache was created in seconds
   uint64_t ramUpTime{0};
 
   // time since the nvm cache was created in seconds
   uint64_t nvmUpTime{0};
+
+  // If true, it means ram cache is brand new, or it was not restored from a
+  // previous cache instance
+  bool isNewRamCache{false};
+
+  // If true, it means nvm cache is brand new, or it was not restored from a
+  // previous cache instance
+  bool isNewNvmCache{false};
 
   // if nvmcache is currently active and serving gets
   bool nvmCacheEnabled;
@@ -480,6 +501,9 @@ struct GlobalCacheStats {
 
   // Number of times slab release was aborted due to shutdown
   uint64_t numAbortedSlabReleases{0};
+
+  // Number of times slab was skipped when reaper runs
+  uint64_t numSkippedSlabReleases{0};
 
   // current active handles outstanding. This stat should
   // not go to negative. If it's negative, it means we have

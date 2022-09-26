@@ -45,6 +45,10 @@ struct CacheConfig : public JSONConfig {
   // by defaullt, lru allocator. can be set to LRU-2Q.
   std::string allocator{"LRU"};
 
+  // if set, we will persist the cache across cachebench runs. The directory
+  // is used to store some metadata about the cache.
+  std::string cacheDir{""};
+
   uint64_t cacheSizeMB{0};
   uint64_t poolRebalanceIntervalSec{0};
   std::string rebalanceStrategy;
@@ -102,6 +106,9 @@ struct CacheConfig : public JSONConfig {
   // nvmCachePaths is empty, an in-memory block device is used.
   uint64_t nvmCacheSizeMB{0};
 
+  // if 0, use the default. Note this takes away space from NvmCache
+  uint64_t nvmCacheMetadataSizeMB{0};
+
   // list of device identifiers for the device path that can be used to
   // monitor the physical write amplification. If empty, physical write amp is
   // not computed. This can be specified as nvme1n1 or nvme1n2 etc, confirming
@@ -118,13 +125,6 @@ struct CacheConfig : public JSONConfig {
   // more than one values provided, it enables segmented fifo with the
   // appropriate ratios.
   std::vector<unsigned int> navySegmentedFifoSegmentRatio{};
-
-  // size classes for large objects in Navy that exceed the
-  // @navySmallItemMaxSize. Must be multiples of @navyBlockSize unless
-  // in-mem buffer is enabled. If empty, navy will use stack allocation mode.
-  std::vector<uint32_t> navySizeClasses{512,      2 * 512,  3 * 512,
-                                        4 * 512,  6 * 512,  8 * 512,
-                                        12 * 512, 16 * 512, 32 * 512};
 
   // Number of shards expressed as power of two for request ordering in
   // Navy. If 0, the default configuration of Navy(20) is used.
@@ -217,6 +217,10 @@ struct CacheConfig : public JSONConfig {
   // enable the ItemDestructor feature, but not check correctness,
   // this verifies whether the feature affects throughputs.
   bool enableItemDestructor{false};
+
+  // If specified, we will not admit any item into NvmCache if their
+  // eviction-age is more than this threshold. 0 means no threshold
+  uint32_t nvmAdmissionRetentionTimeThreshold{0};
 
   //
   // Options below are not to be populated with JSON

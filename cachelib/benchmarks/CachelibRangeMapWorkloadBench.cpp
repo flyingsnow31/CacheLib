@@ -96,7 +96,7 @@ void setup() {
   // insert CachelibRangeMap into cache
   {
     auto m = CachelibRangeMap::create(*cache, poolId, kClMap);
-    cache->insert(m.viewItemHandle());
+    cache->insert(m.viewWriteHandle());
   }
 
   // insert StdMap
@@ -125,7 +125,7 @@ void benchCachelibRangeMap() {
   auto getCachelibRangeMap = [] {
     auto it = cache->findImpl(kClMap, AccessMode::kRead);
     XDCHECK(it);
-    return CachelibRangeMap::fromItemHandle(*cache, std::move(it));
+    return CachelibRangeMap::fromWriteHandle(*cache, std::move(it));
   };
   std::mt19937 gen{1};
   std::discrete_distribution<> rwDist({1 - FLAGS_write_rate, FLAGS_write_rate});
@@ -162,9 +162,9 @@ void benchStdMap() {
     int key = i % FLAGS_num_keys;
 
     if (rwDist(gen) == 0) {
-      s.m_ref()->find(key);
+      s.m()->find(key);
     } else {
-      s.m_ref()[key] = val;
+      s.m()[key] = val;
       auto iobuf = Serializer::serializeToIOBuf(s);
       auto res = util::insertIOBufInCache(*cache, poolId, kStdMap, *iobuf);
       XDCHECK(res);
@@ -194,7 +194,7 @@ void benchFrozenMap() {
       s.m().find(key);
     } else {
       auto mutableS = s.thaw();
-      mutableS.m_ref()[key] = val;
+      mutableS.m()[key] = val;
       insertFrozenMap(mutableS, kFrozenStdMap);
     }
   }
@@ -211,9 +211,9 @@ void benchFollyCacheStdMap() {
     int key = i % FLAGS_num_keys;
 
     if (rwDist(gen) == 0) {
-      s.m_ref()->find(key);
+      s.m()->find(key);
     } else {
-      s.m_ref()[key] = val;
+      s.m()[key] = val;
     }
   }
 }

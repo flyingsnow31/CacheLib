@@ -175,6 +175,10 @@ struct Stats {
   AtomicCounter numReleasedForResize{0};
   AtomicCounter numReleasedForAdvise{0};
   AtomicCounter numAbortedSlabReleases{0};
+  AtomicCounter numSkippedSlabReleases{0};
+
+  // Flag indicating the slab release stuck
+  AtomicCounter numSlabReleaseStuck{0};
 
   // allocations with invalid parameters
   AtomicCounter invalidAllocs{0};
@@ -216,6 +220,7 @@ struct Stats {
   // hit count for every alloc class in every pool
   std::unique_ptr<PerPoolClassTLCounters> cacheHits{};
   std::unique_ptr<PerPoolClassAtomicCounters> allocAttempts{};
+  std::unique_ptr<PerPoolClassAtomicCounters> evictionAttempts{};
   std::unique_ptr<PerPoolClassAtomicCounters> allocFailures{};
   std::unique_ptr<PerPoolClassAtomicCounters> fragmentationSize{};
   std::unique_ptr<PerPoolClassAtomicCounters> chainedItemEvictions{};

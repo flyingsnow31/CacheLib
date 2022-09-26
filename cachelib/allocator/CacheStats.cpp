@@ -25,6 +25,7 @@ namespace detail {
 void Stats::init() {
   cacheHits = std::make_unique<PerPoolClassTLCounters>();
   allocAttempts = std::make_unique<PerPoolClassAtomicCounters>();
+  evictionAttempts = std::make_unique<PerPoolClassAtomicCounters>();
   fragmentationSize = std::make_unique<PerPoolClassAtomicCounters>();
   allocFailures = std::make_unique<PerPoolClassAtomicCounters>();
   chainedItemEvictions = std::make_unique<PerPoolClassAtomicCounters>();
@@ -38,6 +39,7 @@ void Stats::init() {
   };
 
   initToZero(*allocAttempts);
+  initToZero(*evictionAttempts);
   initToZero(*allocFailures);
   initToZero(*fragmentationSize);
   initToZero(*chainedItemEvictions);
@@ -49,7 +51,7 @@ struct SizeVerify {};
 
 void Stats::populateGlobalCacheStats(GlobalCacheStats& ret) const {
 #ifndef SKIP_SIZE_VERIFY
-  SizeVerify<sizeof(Stats)> a = SizeVerify<16144>{};
+  SizeVerify<sizeof(Stats)> a = SizeVerify<16160>{};
   std::ignore = a;
 #endif
   ret.numCacheGets = numCacheGets.get();
@@ -121,6 +123,7 @@ void Stats::populateGlobalCacheStats(GlobalCacheStats& ret) const {
     return sum;
   };
   ret.allocAttempts = accum(*allocAttempts);
+  ret.evictionAttempts = accum(*evictionAttempts);
   ret.allocFailures = accum(*allocFailures);
   ret.numEvictions = accum(*chainedItemEvictions);
   ret.numEvictions += accum(*regularItemEvictions);
@@ -134,6 +137,7 @@ void Stats::populateGlobalCacheStats(GlobalCacheStats& ret) const {
   ret.numEvictionFailureFromMoving = evictFailMove.get();
   ret.numEvictionFailureFromParentMoving = evictFailParentMove.get();
   ret.numAbortedSlabReleases = numAbortedSlabReleases.get();
+  ret.numSkippedSlabReleases = numSkippedSlabReleases.get();
 }
 
 } // namespace detail
@@ -171,6 +175,7 @@ PoolStats& PoolStats::operator+=(const PoolStats& other) {
       auto& d = cacheStats.at(i);
       const auto& s = other.cacheStats.at(i);
       d.allocAttempts += s.allocAttempts;
+      d.evictionAttempts += s.evictionAttempts;
       d.allocFailures += s.allocFailures;
       d.fragmentationSize += s.fragmentationSize;
       d.numHits += s.numHits;
@@ -249,6 +254,14 @@ uint64_t PoolStats::numAllocAttempts() const {
   uint64_t n = 0;
   for (const auto& s : cacheStats) {
     n += s.second.allocAttempts;
+  }
+  return n;
+}
+
+uint64_t PoolStats::numEvictionAttempts() const {
+  uint64_t n = 0;
+  for (const auto& s : cacheStats) {
+    n += s.second.evictionAttempts;
   }
   return n;
 }

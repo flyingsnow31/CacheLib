@@ -20,6 +20,7 @@
 #include <folly/Optional.h>
 #include <folly/Range.h>
 
+#include <cstdint>
 #include <mutex>
 
 #include "cachelib/cachebench/util/Request.h"
@@ -121,7 +122,8 @@ class PieceWiseCacheStats {
                     size_t getBytes,
                     size_t getBodyBytes,
                     size_t bytesEgress,
-                    const std::vector<std::string>& statsAggFields);
+                    const std::vector<std::string>& statsAggFields,
+                    folly::Optional<bool> isHit);
 
   // Record cache hit for objects that are not stored in pieces
   void recordNonPieceHit(size_t hitBytes,
@@ -156,11 +158,18 @@ class PieceWiseCacheStats {
 
   void renderWindowStats(double elapsedSecs, std::ostream& out) const;
 
-  void setNvmCacheWarmedUp() { hasNvmCacheWarmedUp_ = true; }
+  void setNvmCacheWarmedUp(uint64_t timestamp) {
+    hasNvmCacheWarmedUp_ = true;
+    nvmCacheWarmupTimestamp_ = timestamp;
+  }
 
  private:
   // Overall hit rate stats
   InternalStats stats_;
+
+  // Overall hit rate stats for benchmark. It is based on the hit status
+  // provided in the traces.
+  InternalStats statsBenchmark_;
 
   // Stats after cache has been warmed up
   InternalStats statsAfterWarmUp_;
@@ -182,6 +191,7 @@ class PieceWiseCacheStats {
   mutable util::PercentileStats reqLatencyStats_;
 
   bool hasNvmCacheWarmedUp_{false};
+  uint64_t nvmCacheWarmupTimestamp_{0};
 
   template <typename F, typename... Args>
   void recordStats(F& func,
@@ -206,6 +216,11 @@ class PieceWiseCacheStats {
                                    size_t getBytes,
                                    size_t getBodyBytes,
                                    size_t egressBytes);
+  static void recordBenchmark(InternalStats& stats,
+                              size_t getBytes,
+                              size_t getBodyBytes,
+                              size_t egressBytes,
+                              bool isHit);
   static void recordNonPieceHitInternal(InternalStats& stats,
                                         size_t hitBytes,
                                         size_t hitBodyBytes);
@@ -249,6 +264,9 @@ struct PieceWiseReqWrapper {
   // Additional stats aggregation fields for this request sample other
   // than the defined SampleFields
   const std::vector<std::string> statsAggFields;
+  // Whether this trace was a hit. For the cases that we know whether a trace
+  // was a hit, we use this to calculate the hit rate as a benchmark.
+  const folly::Optional<bool> isHit;
 
   // Tracker to record the start/end of request. Initialize it at the
   // start of request processing.
@@ -277,7 +295,8 @@ struct PieceWiseReqWrapper {
       folly::Optional<uint64_t> rangeEnd,
       uint32_t ttl,
       std::vector<std::string>&& statsAggFieldV,
-      std::unordered_map<std::string, std::string>&& admFeatureM);
+      std::unordered_map<std::string, std::string>&& admFeatureM,
+      folly::Optional<bool> isHit);
 
   PieceWiseReqWrapper(const PieceWiseReqWrapper& other);
 };
@@ -312,7 +331,9 @@ class PieceWiseCacheAdapter {
 
   const PieceWiseCacheStats& getStats() const { return stats_; }
 
-  void setNvmCacheWarmedUp() { stats_.setNvmCacheWarmedUp(); }
+  void setNvmCacheWarmedUp(uint64_t timestamp) {
+    stats_.setNvmCacheWarmedUp(timestamp);
+  }
 
  private:
   // Called when rw is piecewise cached. The method updates rw to the next
